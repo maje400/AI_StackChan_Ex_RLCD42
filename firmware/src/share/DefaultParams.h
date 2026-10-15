@@ -6,6 +6,8 @@
   #define DEFAULT_SPEAKER_VOLUME  (120)
 #elif defined(ARDUINO_M5STACK_ATOMS3R)
   #define DEFAULT_SPEAKER_VOLUME  (120)
+#elif defined(ARDUINO_WS_RLCD42)
+  #define DEFAULT_SPEAKER_VOLUME  (64)
 #else  //Core2
   #define DEFAULT_SPEAKER_VOLUME  (200)
 #endif

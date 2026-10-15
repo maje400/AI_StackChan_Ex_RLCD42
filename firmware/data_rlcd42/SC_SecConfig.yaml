@@ -1,0 +1,10 @@
+# 個人情報用の設定ファイル (Waveshare ESP32-S3-RLCD-4.2 / Gemini Live 用)
+wifi:
+  ssid: ""      # ご自宅のWi-Fi SSID (2.4GHz)
+  password: ""  # Wi-Fiパスワード
+
+
+apikey:
+  stt: ""               # STTサービスのAPIキー (Gemini Liveでは不要)
+  aiservice: "" # GeminiのAPIキー (https://aistudio.google.com/apikey で取得)
+  tts: ""               # TTSサービスのAPIキー (Gemini Liveでは不要)

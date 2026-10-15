@@ -9,6 +9,7 @@ void wakeword_init();
 int wakeword_regist();
 int wakeword_compare();
 void delete_mfcc(int idx);
+bool wakeword_any_registered();
 extern int mode;   // 0: none, <0: REGIST, >0: COMPARE
 
 #define base_path "/spiffs"

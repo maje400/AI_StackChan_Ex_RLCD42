@@ -51,6 +51,12 @@
 #include "driver/M5AudioModule.h"
 #endif
 
+#if defined(ARDUINO_WS_RLCD42)
+#include "board/rlcd42/BoardRLCD42.h"
+static m5::Button_Class BtnKey;   // KEY button (GPIO18)
+static m5::Button_Class BtnBoot;  // BOOT button (GPIO0)
+#endif
+
 StackchanExConfig system_config;
 Robot* robot;
 bool isOffline = false;
@@ -198,12 +204,22 @@ bool WifiSmartConfig() {
 }
 
 void time_sync(const char* ntpsrv, long gmt_offset, int daylight_offset) {
-  struct tm timeInfo; 
+  struct tm timeInfo;
   char buf[60];
 
-  configTime(gmt_offset, daylight_offset, ntpsrv);          // NTPサーバと同期
+  // NTPサーバと同期(予備サーバを含む3系統)
+  // 注意: TLS証明書の検証には正しい時刻が必須。時計が1970年のままだと
+  //       Gemini等への接続が X509 verify failed (-9984) で失敗する。
+  configTime(gmt_offset, daylight_offset, ntpsrv, "time.google.com", "pool.ntp.org");
 
-  if (getLocalTime(&timeInfo)) {                            // timeinfoに現在時刻を格納
+  // 最大20秒待って同期を確認する
+  bool synced = false;
+  for (int i = 0; i < 20; ++i) {
+    if (getLocalTime(&timeInfo, 1000)) { synced = true; break; }
+    Serial.print("n");
+  }
+
+  if (synced) {
     Serial.print("NTP : ");                                 // シリアルモニターに表示
     Serial.println(ntpsrv);                                 // シリアルモニターに表示
 
@@ -214,7 +230,7 @@ void time_sync(const char* ntpsrv, long gmt_offset, int daylight_offset) {
     Serial.println(buf);                                    // シリアルモニターに表示
   }
   else {
-    Serial.print("NTP Sync Error ");                        // シリアルモニターに表示
+    Serial.println("NTP Sync Error (TLS接続は時刻不正で失敗します)");
   }
 }
 
@@ -291,6 +307,13 @@ void init_mic_spk()
     micConfig.pin_bck = SYS_I2S_SCLK_PIN;
     micConfig.pin_mck = SYS_I2S_MCLK_PIN;
     micConfig.pin_ws = SYS_I2S_LRCK_PIN;
+#elif defined(ARDUINO_WS_RLCD42)
+    // MCLK必須(ES7210/ES8311とも比256のMCLKで動作することを実機計測で確認済み)
+    micConfig.pin_data_in = RLCD42_I2S_DIN;
+    micConfig.pin_bck = RLCD42_I2S_BCLK;
+    micConfig.pin_mck = RLCD42_I2S_MCLK;
+    micConfig.pin_ws = RLCD42_I2S_LRCK;
+    micConfig.stereo = false;
 #endif
     M5.Mic.config(micConfig);
   }
@@ -307,6 +330,14 @@ void init_mic_spk()
     spk_cfg.pin_bck = SYS_I2S_SCLK_PIN;
     spk_cfg.pin_mck = SYS_I2S_MCLK_PIN;
     spk_cfg.pin_ws = SYS_I2S_LRCK_PIN;
+#elif defined(ARDUINO_WS_RLCD42)
+    // 実クロック: LRCK = sample_rate/2 = 32kHz, MCLK = 256×LRCK = 8.192MHz
+    spk_cfg.sample_rate = RLCD42_SPK_SAMPLE_RATE;
+    spk_cfg.pin_data_out = RLCD42_I2S_DOUT;
+    spk_cfg.pin_bck = RLCD42_I2S_BCLK;
+    spk_cfg.pin_mck = RLCD42_I2S_MCLK;
+    spk_cfg.pin_ws = RLCD42_I2S_LRCK;
+    spk_cfg.stereo = false;
 #endif
     M5.Speaker.config(spk_cfg);
   }
@@ -325,8 +356,31 @@ void setup()
   cfg.internal_mic = false;
   cfg.external_speaker.atomic_echo = true;
 #endif
+#if defined(ARDUINO_WS_RLCD42)
+  cfg.internal_spk = false;   // ES8311/ES7210は自前で初期化する
+  cfg.internal_mic = false;
+  cfg.internal_imu = false;
+  cfg.internal_rtc = false;
+#endif
   cfg.serial_baudrate = 115200;   //M5Unified 0.1.17からデフォルトが0になったため設定
+
+#if defined(ARDUINO_WS_RLCD42)
+  // 重要: M5.beginの前に実行すること。
+  // 未知ボードに対するM5GFXのボード自動判定はGPIOを探ってクラッシュするため無効化し、
+  // ST7305ディスプレイを先にM5.Displayへ接続しておく。
+  rlcd42_gfx_skip_autodetect();
+  rlcd42_display_init();
+#endif
+
   M5.begin(cfg);
+
+#if defined(ARDUINO_WS_RLCD42)
+  // オーディオコーデックとボタンの初期化
+  rlcd42_audio_init();
+  pinMode(RLCD42_BTN_KEY, INPUT_PULLUP);
+  pinMode(RLCD42_BTN_BOOT, INPUT_PULLUP);
+  BtnKey.setHoldThresh(1000);
+#endif
 
   ///// Debug /////
 #if 0
@@ -362,7 +416,7 @@ void setup()
   init_mic_spk();
 
   /// settings
-#if defined(ARDUINO_M5STACK_ATOMS3R)
+#if defined(ARDUINO_M5STACK_ATOMS3R) || defined(ARDUINO_WS_RLCD42)
   if (SPIFFS.begin()) {
     // この関数ですべてのYAMLファイル(Basic, Secret, Extend)を読み込む
     system_config.loadConfig(SPIFFS, "/SC_ExConfig.yaml", 2048,
@@ -455,6 +509,15 @@ void setup()
   avatar.setScale(0.5);
   avatar.setPosition(-56, -96);
   avatar.init();
+#elif defined(ARDUINO_WS_RLCD42)
+#if defined(CAT_FACE)
+  customFace = new CatFace();
+  avatar.setFace(customFace);
+#endif
+  // 顔の論理サイズ320x240 → 400x300にちょうど収まる倍率
+  avatar.setScale(1.25);
+  avatar.setPosition(0, 0);
+  avatar.init();   // colorDepth=1 (モノクロRLCDに最適)
 #else
   //avatar.init();
   avatar.init(16);
@@ -502,6 +565,23 @@ void loop()
   mod->idle();
   //get_elapsed_time_micro("Mod idle time");
 
+#if defined(ARDUINO_WS_RLCD42)
+  // KEY(GPIO18): 短押し=会話開始/停止(btnA相当)、長押し(1秒)=ウェイクワード登録(btnB長押し相当)
+  // BOOT(GPIO0): 短押し=WebUIのQRコード表示(btnC相当)
+  {
+    uint32_t ms = millis();
+    BtnKey.setRawState(ms, !digitalRead(RLCD42_BTN_KEY));
+    BtnBoot.setRawState(ms, !digitalRead(RLCD42_BTN_BOOT));
+
+    if (BtnKey.wasClicked())  { mod->btnA_pressed(); }
+    if (BtnKey.wasHold())     { mod->btnB_longPressed(); }
+    if (BtnBoot.wasClicked()) { mod->btnC_pressed(); }
+  }
+#endif
+
+#if !defined(ARDUINO_WS_RLCD42)
+  // 注意: 未知ボードではM5UnifiedがBtnAをGPIO0(BOOT)に割り当てるため、
+  // 当ボードでは上のKEY/BOOT独自処理と二重反応する。本家のボタン処理は無効化。
   if (M5.BtnA.wasPressed())
   {
     mod->btnA_pressed();
@@ -526,6 +606,7 @@ void loop()
   {
     mod->btnC_pressed();
   }
+#endif
 
 #if defined(ARDUINO_M5STACK_Core2) || defined( ARDUINO_M5STACK_CORES3 )
   auto count = M5.Touch.getCount();

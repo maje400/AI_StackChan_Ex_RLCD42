@@ -322,4 +322,12 @@ void delete_mfcc(int idx)
   mfcc[idx] = nullptr;
 }
 
+bool wakeword_any_registered()
+{
+  for (int i = 0; i < REGISTER_MAX; i++) {
+    if (mfcc[i] != nullptr) { return true; }
+  }
+  return false;
+}
+
 #endif //ENABLE_WAKEWORD

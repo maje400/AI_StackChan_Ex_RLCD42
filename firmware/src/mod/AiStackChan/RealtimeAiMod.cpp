@@ -13,7 +13,12 @@
 #include "Scheduler.h"
 #include "MySchedule.h"
 #include "share/SDUtil.h"
+#include "share/Mutex.h"
 #include "driver/HeadTouchSensor.h"
+
+#if defined(ENABLE_WAKEWORD)
+#include "driver/WakeWord.h"
+#endif
 
 using namespace m5avatar;
 
@@ -23,6 +28,9 @@ extern Avatar avatar;
 extern bool servo_home;
 extern void sw_tone();
 extern void alarm_tone();
+#if defined(ENABLE_WAKEWORD)
+extern bool wakeword_is_enable;   // AiStackChanMod.cppで定義
+#endif
 ///////////////
 
 
@@ -37,6 +45,18 @@ RealtimeAiMod::RealtimeAiMod(bool _isOffline)
 
   pRtLLM = (RealtimeLLMBase*)robot->llm;
   pRtLLM->invokeWebSocketLoopTask();
+
+#if defined(ENABLE_WAKEWORD)
+  if(robot->m_config.getExConfig().wakeword.type == WAKEWORD_TYPE_SIMPLEVOX){
+    wakeword_init();
+    // 登録済みウェイクワードがあれば起動時から待ち受けを有効化
+    if(wakeword_any_registered()){
+      mode = 1;
+      wakeword_is_enable = true;
+      Serial.println("Wakeword: registered data found. Listening enabled.");
+    }
+  }
+#endif
 
   //servo_home = false;
 
@@ -70,7 +90,7 @@ void RealtimeAiMod::update(int page_no)
 
 void RealtimeAiMod::btnA_pressed(void)
 {
-#if defined(ARDUINO_M5STACK_ATOMS3R)
+#if defined(ARDUINO_M5STACK_ATOMS3R) || defined(ARDUINO_WS_RLCD42)
   Serial.println("Btn A pressed");
   sw_tone();
   toggleRealtimeRecord();
@@ -79,7 +99,23 @@ void RealtimeAiMod::btnA_pressed(void)
 
 void RealtimeAiMod::btnB_longPressed(void)
 {
-
+#if defined(ENABLE_WAKEWORD)
+  // ウェイクワード登録モード開始（登録後は自動で待ち受け有効化）
+  if(pRtLLM->isRealtimeRecording()){
+    pRtLLM->stopRealtimeRecord();
+  }
+  M5.Mic.end();
+  M5.Speaker.begin();
+  M5.Speaker.tone(1000, 100);
+  delay(500);
+  M5.Speaker.tone(600, 100);
+  delay(1000);
+  M5.Speaker.end();
+  M5.Mic.begin();
+  wakeword_is_enable = false;
+  mode = -1;
+  avatar.setSpeechText("ウェイクワード登録開始");
+#endif
 }
 
 void RealtimeAiMod::btnC_pressed(void)
@@ -147,6 +183,10 @@ void RealtimeAiMod::idle(void)
 
 #endif  //REALTIME_API_WITH_TTS
 
+#if defined(ENABLE_WAKEWORD)
+  wakewordHandler();
+#endif
+
   // Alarm (Function Calling)
   alarmEventHandler();
   updateHeadTouchExpression();
@@ -159,6 +199,55 @@ void RealtimeAiMod::idle(void)
 #endif
 
 }
+
+#if defined(ENABLE_WAKEWORD)
+void RealtimeAiMod::wakewordHandler(void)
+{
+  if (mode < 0) {
+    // 登録モード: ウェイクワードを発話すると録音・再生して登録される
+    int idx = wakeword_regist();
+    if(idx >= 0){
+      String text = String("ウェイクワード#") + String(idx) + String("登録終了");
+      avatar.setSpeechText(text.c_str());
+      delay(1000);
+      avatar.setSpeechText("");
+      mode = 1;
+      wakeword_is_enable = true;
+    }
+  }
+  else if (mode > 0 && wakeword_is_enable) {
+    // 録音中・応答再生中はマイクを触らない(I2Sポート競合で再生が失敗するため)。
+    // さらに再生終了後1.5秒は待ち受けを再開しない(自己音声の残響への誤反応防止)。
+    static uint32_t quietSinceMs = 0;
+    bool busy = pRtLLM->isRealtimeRecording() || pRtLLM->isSpeaking() || M5.Speaker.isRunning();
+    if (busy) {
+      quietSinceMs = 0;
+      return;
+    }
+    if (quietSinceMs == 0) {
+      quietSinceMs = millis();
+      clear_buff();   // 溜まった音声バッファを破棄してから待ち受け再開
+      return;
+    }
+    if (millis() - quietSinceMs < 1500) { return; }
+
+    // 再生タスクのMic.end→Speaker.begin遷移と排他してマイクを読む
+    enterMutexAudio();
+    int idx = wakeword_compare();
+    exitMutexAudio();
+    if (idx >= 0) {
+      Serial.println("Wakeword detected!");
+      String text = String("ウェイクワード#") + String(idx);
+      avatar.setSpeechText(text.c_str());
+      sw_tone();
+      avatar.setSpeechText("");
+      if (!pRtLLM->isRealtimeRecording()) {
+        pRtLLM->startRealtimeRecord();
+      }
+    }
+  }
+}
+#endif  //ENABLE_WAKEWORD
 
 void RealtimeAiMod::alarmEventHandler()
 {

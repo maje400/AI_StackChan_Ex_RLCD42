@@ -22,6 +22,9 @@
 #elif defined( ARDUINO_M5STACK_ATOMS3R )
   #define DEFAULT_SERVO_PIN_X 0   //非対応
   #define DEFAULT_SERVO_PIN_Y 0
+#elif defined( ARDUINO_WS_RLCD42 )
+  #define DEFAULT_SERVO_PIN_X 0   //サーボ未接続
+  #define DEFAULT_SERVO_PIN_Y 0
 #endif
 
 

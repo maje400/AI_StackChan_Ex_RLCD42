@@ -1,0 +1,8 @@
+{
+  "name": "esp_codec",
+  "version": "1.0.0",
+  "description": "ES8311/ES7210 codec drivers (Espressif esp-bsp, Apache-2.0) vendored for ESP32-S3-RLCD-4.2 port",
+  "license": "Apache-2.0",
+  "frameworks": "arduino",
+  "platforms": "espressif32"
+}

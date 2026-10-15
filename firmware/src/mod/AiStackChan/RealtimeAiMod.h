@@ -25,6 +25,11 @@ private:
     // for alarm (Function Calling)
     void alarmEventHandler();
 
+#if defined(ENABLE_WAKEWORD)
+    // wake word (SimpleVox) handling in realtime mode
+    void wakewordHandler(void);
+#endif
+
     // for official CoreS3 head touch sensor
     unsigned long headTouchHappyUntilMs = 0;
     bool headTouchHappyActive = false;
