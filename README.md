@@ -1,5 +1,7 @@
 [English](README_en.md)
 
+> **このリポジトリについて**: [ronron-gh/AI_StackChan_Ex](https://github.com/ronron-gh/AI_StackChan_Ex) を [Waveshare ESP32-S3-RLCD-4.2](https://docs.waveshare.com/ESP32-S3-RLCD-4.2)（モノクロ反射型液晶）に移植したフォークです。**移植版は [`rlcd42` ブランチ](https://github.com/maje400/AI_StackChan_Ex_RLCD42/tree/rlcd42)にあります**（説明と手順は [README_RLCD42.md](https://github.com/maje400/AI_StackChan_Ex_RLCD42/blob/rlcd42/README_RLCD42.md)）。この `main` ブランチは本家のままです。
+
 # AI Stack-chan Ex
 [![PlatformIO CI](https://github.com/ronron-gh/AI_StackChan_Ex/actions/workflows/platformio-ci.yml/badge.svg)](https://github.com/ronron-gh/AI_StackChan_Ex/actions/workflows/platformio-ci.yml)
 
